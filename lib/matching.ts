@@ -33,6 +33,8 @@ export interface Member {
   name: string
   submitted: boolean
   availability: Record<string, AvailabilityState>
+  /** Example member preloaded in demo mode (not a real person). */
+  isDemo?: boolean
 }
 
 export interface Group {

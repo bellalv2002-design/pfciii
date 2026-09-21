@@ -109,6 +109,34 @@ export default function Workspace({
             style={{ width: `${totalCount ? (respondedCount / totalCount) * 100 : 0}%` }}
           />
         </div>
+
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {group.members.map((member) => (
+            <li
+              key={member.id}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${
+                member.submitted
+                  ? "border-[#2FBF71]/30 bg-[#2FBF71]/[0.08] text-[#1F2430]"
+                  : "border-black/10 bg-[#F7F8FA] text-[#1F2430]/70"
+              }`}
+            >
+              {member.submitted ? (
+                <Check className="size-3.5 text-[#2FBF71]" aria-hidden="true" />
+              ) : (
+                <span className="size-1.5 rounded-full bg-[#1F2430]/30" aria-hidden="true" />
+              )}
+              <span className="font-medium">
+                {member.name}
+                {member.id === session.memberId ? " (tú)" : ""}
+              </span>
+              {member.isDemo ? (
+                <span className="rounded bg-[#F5B942]/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#B77900]">
+                  demo
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Tabs */}

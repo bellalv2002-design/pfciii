@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { AvailabilityState, Group } from "./matching"
+import { createDemoMembers } from "./mock-members"
 
 const STORAGE_KEY = "quedamos:groups:v1"
 const SESSION_KEY = "quedamos:session:v1"
@@ -70,7 +71,12 @@ export function createGroup(groupName: string, personName: string): Session {
     code,
     name: groupName.trim(),
     createdAt: Date.now(),
-    members: [{ id: memberId, name: personName.trim(), submitted: false, availability: {} }],
+    // Demo mode: seed the group with example members so matching can be seen
+    // immediately without a second person joining from another device.
+    members: [
+      { id: memberId, name: personName.trim(), submitted: false, availability: {} },
+      ...createDemoMembers(),
+    ],
   }
   writeAll(map)
   return { code, memberId }

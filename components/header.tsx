@@ -4,8 +4,10 @@ import { CalendarCheck } from "lucide-react"
 
 export default function Header({
   onLeave,
+  onMyGroups,
 }: {
   onLeave?: () => void
+  onMyGroups?: () => void
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-black/5 bg-[#F7F8FA]/80 backdrop-blur-sm">
@@ -16,15 +18,26 @@ export default function Header({
           </span>
           <span className="text-lg font-semibold tracking-tight text-[#1F2430]">Quedamos</span>
         </div>
-        {onLeave ? (
-          <button
-            type="button"
-            onClick={onLeave}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#1F2430]/60 transition-colors hover:bg-black/5 hover:text-[#1F2430]"
-          >
-            Salir
-          </button>
-        ) : null}
+        <nav className="flex items-center gap-1">
+          {onMyGroups ? (
+            <button
+              type="button"
+              onClick={onMyGroups}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#1F2430]/60 transition-colors hover:bg-black/5 hover:text-[#1F2430]"
+            >
+              Mis grupos
+            </button>
+          ) : null}
+          {onLeave ? (
+            <button
+              type="button"
+              onClick={onLeave}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#1F2430]/60 transition-colors hover:bg-black/5 hover:text-[#1F2430]"
+            >
+              Salir
+            </button>
+          ) : null}
+        </nav>
       </div>
     </header>
   )

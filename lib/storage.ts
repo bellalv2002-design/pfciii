@@ -12,11 +12,20 @@ import { createDemoMembers } from "./mock-members"
 
 const STORAGE_KEY = "quedamos:groups:v1"
 const SESSION_KEY = "quedamos:session:v1"
+const MEMBERSHIPS_KEY = "quedamos:memberships:v1"
 const UPDATE_EVENT = "quedamos:update"
 
 export interface Session {
   code: string
   memberId: string
+}
+
+/** A group the current person belongs to, remembered for the "Mis grupos" view. */
+export interface Membership {
+  code: string
+  memberId: string
+  groupName: string
+  joinedAt: number
 }
 
 type GroupMap = Record<string, Group>
@@ -79,6 +88,7 @@ export function createGroup(groupName: string, personName: string): Session {
     ],
   }
   writeAll(map)
+  rememberMembership({ code, memberId, groupName: map[code].name, joinedAt: Date.now() })
   return { code, memberId }
 }
 
@@ -91,6 +101,7 @@ export function joinGroup(rawCode: string, personName: string): Session | null {
   const memberId = newId()
   group.members.push({ id: memberId, name: personName.trim(), submitted: false, availability: {} })
   writeAll(map)
+  rememberMembership({ code, memberId, groupName: group.name, joinedAt: Date.now() })
   return { code, memberId }
 }
 
@@ -131,6 +142,67 @@ export function loadSession(): Session | null {
 
 export function clearSession(): void {
   window.localStorage.removeItem(SESSION_KEY)
+}
+
+function readMemberships(): Membership[] {
+  if (typeof window === "undefined") return []
+  try {
+    return JSON.parse(window.localStorage.getItem(MEMBERSHIPS_KEY) || "[]") as Membership[]
+  } catch {
+    return []
+  }
+}
+
+function writeMemberships(list: Membership[]): void {
+  window.localStorage.setItem(MEMBERSHIPS_KEY, JSON.stringify(list))
+  window.dispatchEvent(new Event(UPDATE_EVENT))
+}
+
+/** Record (or refresh) the fact that this person belongs to a group. */
+export function rememberMembership(entry: Membership): void {
+  const list = readMemberships().filter((m) => m.code !== entry.code)
+  list.push(entry)
+  writeMemberships(list)
+}
+
+export function forgetMembership(code: string): void {
+  writeMemberships(readMemberships().filter((m) => m.code !== code))
+}
+
+/**
+ * List the groups this person belongs to, most recent first. Drops entries
+ * whose underlying group no longer exists (e.g. cleared from another session).
+ */
+export function useMemberships(): Membership[] {
+  const [memberships, setMemberships] = useState<Membership[]>([])
+
+  useEffect(() => {
+    const refresh = () => {
+      const map = readAll()
+      const valid = readMemberships()
+        .filter((m) => map[m.code])
+        // Keep the stored group name in sync with the source of truth.
+        .map((m) => ({ ...m, groupName: map[m.code].name }))
+        .sort((a, b) => b.joinedAt - a.joinedAt)
+      setMemberships(valid)
+    }
+    refresh()
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === MEMBERSHIPS_KEY || e.key === STORAGE_KEY) refresh()
+    }
+    window.addEventListener("storage", onStorage)
+    window.addEventListener(UPDATE_EVENT, refresh)
+    const interval = window.setInterval(refresh, 1500)
+
+    return () => {
+      window.removeEventListener("storage", onStorage)
+      window.removeEventListener(UPDATE_EVENT, refresh)
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  return memberships
 }
 
 /** Subscribe to a single group and keep it in sync across tabs. */

@@ -5,10 +5,11 @@ import Header from "@/components/header"
 import Hero from "@/components/hero"
 import GroupForm from "@/components/group-form"
 import Workspace from "@/components/workspace"
+import MyGroups from "@/components/my-groups"
 import Footer from "@/components/footer"
 import { clearSession, loadSession, saveSession, type Session } from "@/lib/storage"
 
-type View = "home" | "create" | "join"
+type View = "home" | "create" | "join" | "my-groups"
 
 export default function Page() {
   const [ready, setReady] = useState(false)
@@ -36,13 +37,18 @@ export default function Page() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F7F8FA] text-[#1F2430]">
-      <Header onLeave={session ? leave : undefined} />
+      <Header
+        onLeave={session ? leave : undefined}
+        onMyGroups={session ? undefined : () => setView("my-groups")}
+      />
 
       <main className="flex-1">
         {!ready ? null : session ? (
           <Workspace session={session} onMissing={leave} />
         ) : view === "home" ? (
           <Hero onCreate={() => setView("create")} onJoin={() => setView("join")} />
+        ) : view === "my-groups" ? (
+          <MyGroups onBack={() => setView("home")} onOpen={enter} />
         ) : (
           <GroupForm mode={view} onBack={() => setView("home")} onEnter={enter} onSwitch={setView} />
         )}

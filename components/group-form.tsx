@@ -38,11 +38,11 @@ export default function GroupForm({
     setCreated({ session, groupName: groupName.trim() })
   }
 
-  function handleJoin(e: React.FormEvent) {
+  async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     if (!personName.trim() || !parseCode(codeInput)) return
-    const session = joinGroup(codeInput, personName)
+    const session = await joinGroup(codeInput, personName)
     if (!session) {
       setError("No encontramos un grupo con ese código. Verifícalo e intenta de nuevo.")
       return

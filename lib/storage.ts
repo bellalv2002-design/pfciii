@@ -34,7 +34,23 @@ type GroupMap = Record<string, Group>
 function readAll(): GroupMap {
   if (typeof window === "undefined") return {}
   try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}") as GroupMap
+    const map = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}") as GroupMap
+    let changed = false
+    for (const group of Object.values(map)) {
+      const seen = new Set<string>()
+      const members = group.members.filter((member) => {
+        const key = member.isDemo ? `demo:${member.id}` : `real:${member.name.trim().toLowerCase()}`
+        if (seen.has(key)) {
+          changed = true
+          return false
+        }
+        seen.add(key)
+        return true
+      })
+      if (members.length !== group.members.length) group.members = members
+    }
+    if (changed) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+    return map
   } catch {
     return {}
   }
@@ -56,11 +72,27 @@ async function syncGroupsToSupabase(map: GroupMap): Promise<void> {
       }, { onConflict: "codigo_invitacion" }).select("id").single()
       if (!space) continue
       for (const member of group.members.filter((m) => !m.isDemo)) {
-        const { data: executive } = await supabase.from("ejecutivos").upsert({
-          espacio_id: space.id,
-          nombre: member.name,
-          asistente_nombre: member.name,
-        }).select("id").single()
+        // The current schema does not have a unique constraint for executives.
+        // Reuse the existing row instead of upserting a new one on every poll.
+        const { data: existing } = await supabase
+          .from("ejecutivos")
+          .select("id")
+          .eq("espacio_id", space.id)
+          .eq("nombre", member.name)
+          .limit(1)
+          .maybeSingle()
+        const { data: executive } = existing
+          ? await supabase
+              .from("ejecutivos")
+              .update({ asistente_nombre: member.name })
+              .eq("id", existing.id)
+              .select("id")
+              .single()
+          : await supabase
+              .from("ejecutivos")
+              .insert({ espacio_id: space.id, nombre: member.name, asistente_nombre: member.name })
+              .select("id")
+              .single()
         if (!executive) continue
         const preferences = Object.entries(member.availability).map(([key, state]) => {
           const [dia, hora] = key.split("-").map(Number)
@@ -80,7 +112,13 @@ async function loadGroupFromSupabase(code: string): Promise<Group | null> {
     const { data: executives } = await supabase.from("ejecutivos").select("id,nombre").eq("espacio_id", space.id)
     const ids = (executives ?? []).map((e) => e.id)
     const { data: preferences } = ids.length ? await supabase.from("preferencias").select("ejecutivo_id,dia,hora,estado").in("ejecutivo_id", ids) : { data: [] as any[] }
-      const members = (executives ?? []).map((e) => ({
+      const seenNames = new Set<string>()
+    const members = (executives ?? []).filter((e) => {
+      const key = e.nombre.trim().toLowerCase()
+      if (seenNames.has(key)) return false
+      seenNames.add(key)
+      return true
+    }).map((e) => ({
       id: e.id,
       name: e.nombre,
       submitted: true,

@@ -80,9 +80,15 @@ async function loadGroupFromSupabase(code: string): Promise<Group | null> {
     const { data: executives } = await supabase.from("ejecutivos").select("id,nombre").eq("espacio_id", space.id)
     const ids = (executives ?? []).map((e) => e.id)
     const { data: preferences } = ids.length ? await supabase.from("preferencias").select("ejecutivo_id,dia,hora,estado").in("ejecutivo_id", ids) : { data: [] as any[] }
-    const members = (executives ?? []).map((e) => ({
-      id: e.id, name: e.nombre, submitted: true,
-      availability: Object.fromEntries((preferences ?? []).filter((p) => p.ejecutivo_id === e.id).map((p) => [`${p.dia}-${p.hora}`, p.estado === "prioridad_alta" ? 2 : 1]))
+      const members = (executives ?? []).map((e) => ({
+      id: e.id,
+      name: e.nombre,
+      submitted: true,
+      availability: Object.fromEntries(
+        (preferences ?? [])
+          .filter((p) => p.ejecutivo_id === e.id)
+          .map((p) => [`${p.dia}-${p.hora}`, p.estado === "prioridad_alta" ? 2 : 1]),
+      ) as Record<string, AvailabilityState>,
     }))
     return { code: space.codigo_invitacion, name: space.nombre, createdAt: new Date(space.creado_en).getTime(), members }
   } catch { return null }
@@ -135,11 +141,19 @@ export function createGroup(groupName: string, personName: string): Session {
   return { code, memberId }
 }
 
-export function joinGroup(rawCode: string, personName: string): Session | null {
-  const map = readAll()
+export async function joinGroup(rawCode: string, personName: string): Promise<Session | null> {
   const code = parseCode(rawCode)
-  const group = map[code]
-  if (!group) return null
+  const map = readAll()
+  let group = map[code]
+
+  // A new browser has no local copy yet, so hydrate the group from Supabase
+  // before adding the new participant.
+  if (!group) {
+    const remoteGroup = await loadGroupFromSupabase(code)
+    if (!remoteGroup) return null
+    group = remoteGroup
+    map[code] = remoteGroup
+  }
 
   const memberId = newId()
   group.members.push({ id: memberId, name: personName.trim(), submitted: false, availability: {} })

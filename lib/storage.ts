@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react"
 import type { AvailabilityState, Group } from "./matching"
 import { createDemoMembers } from "./mock-members"
+import { createClient } from "./supabase/client"
 
 const STORAGE_KEY = "quedamos:groups:v1"
 const SESSION_KEY = "quedamos:session:v1"
@@ -41,8 +42,50 @@ function readAll(): GroupMap {
 
 function writeAll(map: GroupMap): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
-  // Notify listeners in the same tab (the `storage` event only fires elsewhere).
   window.dispatchEvent(new Event(UPDATE_EVENT))
+  void syncGroupsToSupabase(map)
+}
+
+async function syncGroupsToSupabase(map: GroupMap): Promise<void> {
+  try {
+    const supabase = createClient()
+    for (const group of Object.values(map)) {
+      const { data: space } = await supabase.from("espacios").upsert({
+        codigo_invitacion: group.code,
+        nombre: group.name,
+      }, { onConflict: "codigo_invitacion" }).select("id").single()
+      if (!space) continue
+      for (const member of group.members.filter((m) => !m.isDemo)) {
+        const { data: executive } = await supabase.from("ejecutivos").upsert({
+          espacio_id: space.id,
+          nombre: member.name,
+          asistente_nombre: member.name,
+        }).select("id").single()
+        if (!executive) continue
+        const preferences = Object.entries(member.availability).map(([key, state]) => {
+          const [dia, hora] = key.split("-").map(Number)
+          return { ejecutivo_id: executive.id, dia, hora, estado: state === 2 ? "prioridad_alta" : "disponible" }
+        })
+        if (preferences.length) await supabase.from("preferencias").upsert(preferences, { onConflict: "ejecutivo_id,dia,hora" })
+      }
+    }
+  } catch { /* local mode remains available if the network is unavailable */ }
+}
+
+async function loadGroupFromSupabase(code: string): Promise<Group | null> {
+  try {
+    const supabase = createClient()
+    const { data: space } = await supabase.from("espacios").select("id,codigo_invitacion,nombre,creado_en").eq("codigo_invitacion", code).maybeSingle()
+    if (!space) return null
+    const { data: executives } = await supabase.from("ejecutivos").select("id,nombre").eq("espacio_id", space.id)
+    const ids = (executives ?? []).map((e) => e.id)
+    const { data: preferences } = ids.length ? await supabase.from("preferencias").select("ejecutivo_id,dia,hora,estado").in("ejecutivo_id", ids) : { data: [] as any[] }
+    const members = (executives ?? []).map((e) => ({
+      id: e.id, name: e.nombre, submitted: true,
+      availability: Object.fromEntries((preferences ?? []).filter((p) => p.ejecutivo_id === e.id).map((p) => [`${p.dia}-${p.hora}`, p.estado === "prioridad_alta" ? 2 : 1]))
+    }))
+    return { code: space.codigo_invitacion, name: space.nombre, createdAt: new Date(space.creado_en).getTime(), members }
+  } catch { return null }
 }
 
 function newId(): string {
@@ -214,7 +257,17 @@ export function useGroup(code: string | null): Group | null {
       setGroup(null)
       return
     }
-    setGroup(readAll()[code] ?? null)
+    const local = readAll()[code] ?? null
+    setGroup(local)
+    void loadGroupFromSupabase(code).then((remote) => {
+      if (!remote) return
+      const current = readAll()[code]
+      const localOwner = current?.members.find((m) => !m.isDemo && m.id !== remote.members[0]?.id)
+      const merged = localOwner ? { ...remote, members: [localOwner, ...remote.members.filter((m) => m.name !== localOwner.name)] } : remote
+      const next = { ...readAll(), [code]: merged }
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      setGroup(merged)
+    })
   }, [code])
 
   useEffect(() => {
